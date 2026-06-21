@@ -8,6 +8,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -76,6 +77,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -178,7 +182,11 @@ private fun RowScope.NavigationDestination(
     Column(
         modifier = Modifier
             .weight(1f)
-            .clickable(onClick = onClick)
+            .selectable(
+                selected = selected,
+                onClick = onClick,
+                role = Role.Tab,
+            )
             .padding(vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(3.dp),
@@ -223,6 +231,8 @@ private fun HomeScreen(
     val state by viewModel.resolver.collectAsState()
     val tasks by viewModel.tasks.collectAsState()
     val clipboard = LocalClipboardManager.current
+    val activeCount = tasks.count { it.status in activeTaskStatuses }
+    val failedCount = tasks.count { it.status == TaskStatus.FAILED }
 
     LazyColumn(
         modifier = Modifier
@@ -244,7 +254,7 @@ private fun HomeScreen(
                         letterSpacing = (-1).sp,
                     )
                     Text(
-                        "把链接变成可管理的离线内容",
+                        "链接、选集、下载，一处完成",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -254,7 +264,11 @@ private fun HomeScreen(
                     shape = RoundedCornerShape(16.dp),
                 ) {
                     Text(
-                        "${tasks.count { it.status == TaskStatus.DOWNLOADING }} 下载中",
+                        when {
+                            activeCount > 0 -> "$activeCount 进行中"
+                            failedCount > 0 -> "$failedCount 需处理"
+                            else -> "就绪"
+                        },
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                         style = MaterialTheme.typography.labelLarge,
@@ -282,7 +296,7 @@ private fun HomeScreen(
                         style = MaterialTheme.typography.titleLarge,
                     )
                     Text(
-                        "支持视频、番剧、课程、收藏夹、稍后再看、空间、合集与列表。",
+                        "粘贴或分享链接，识别后选择要保存的内容。",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -365,27 +379,6 @@ private fun HomeScreen(
         } else {
             items(tasks.take(4), key = { it.id }) { task ->
                 CompactTaskRow(task, onClick = onOpenTasks)
-            }
-        }
-        item {
-            Spacer(Modifier.height(18.dp))
-            SectionHeader("支持的内容")
-            Row(
-                modifier = Modifier.padding(horizontal = 20.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                listOf("单集与多 P", "整季选集", "个人内容").forEach {
-                    Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.66f),
-                    ) {
-                        Text(
-                            it,
-                            modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
-                            style = MaterialTheme.typography.labelLarge,
-                        )
-                    }
-                }
             }
         }
     }
@@ -701,6 +694,7 @@ private fun TaskRow(
 ) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
+    var errorExpanded by remember(task.id, task.error) { mutableStateOf(false) }
     Surface(
         modifier = Modifier
             .padding(horizontal = 16.dp, vertical = 6.dp)
@@ -793,23 +787,41 @@ private fun TaskRow(
                     color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.64f),
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
-                        Text(
-                            "详细报错",
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                            style = MaterialTheme.typography.labelLarge,
-                        )
-                        Text(
-                            task.error,
-                            modifier = Modifier.padding(top = 6.dp),
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                            style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 10,
-                            overflow = TextOverflow.Ellipsis,
-                        )
                         Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 6.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "下载失败",
+                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                    style = MaterialTheme.typography.labelLarge,
+                                )
+                                Text(
+                                    task.errorSummary(),
+                                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.78f),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            TextButton(onClick = { errorExpanded = !errorExpanded }) {
+                                Text(if (errorExpanded) "收起" else "详情")
+                            }
+                        }
+                        if (errorExpanded) {
+                            Text(
+                                task.error,
+                                modifier = Modifier.padding(top = 8.dp),
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 12,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.End,
                         ) {
                             TextButton(
@@ -844,6 +856,14 @@ private fun TaskRow(
     }
 }
 
+private fun DownloadTask.errorSummary(): String {
+    if (error.contains("HTTP 403")) return "视频流下载被拒绝 · HTTP 403"
+    return error.lineSequence()
+        .firstOrNull { it.isNotBlank() && !it.startsWith("下载失败") }
+        ?.take(48)
+        ?: "请查看详情"
+}
+
 private fun taskErrorReport(task: DownloadTask): String {
     if (task.error.startsWith("下载失败")) return task.error
     return buildString {
@@ -870,7 +890,10 @@ private fun TaskAction(
         TaskStatus.PREPARING,
         TaskStatus.DOWNLOADING,
         TaskStatus.MERGING
-        -> IconButton(onClick = onPause) {
+        -> IconButton(
+            onClick = onPause,
+            modifier = Modifier.semantics { contentDescription = "暂停" },
+        ) {
             Text("Ⅱ", fontWeight = FontWeight.Bold, fontSize = 18.sp)
         }
         TaskStatus.PAUSED,
@@ -895,6 +918,9 @@ private fun SettingsScreen(
     val settings by viewModel.settings.collectAsState()
     val account by viewModel.account.collectAsState()
     var qualityDialog by remember { mutableStateOf<String?>(null) }
+    var contentDialog by remember { mutableStateOf(false) }
+    var danmakuDialog by remember { mutableStateOf(false) }
+    var keywordDialog by remember { mutableStateOf(false) }
     val folderLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocumentTree(),
     ) { uri ->
@@ -1041,11 +1067,11 @@ private fun SettingsScreen(
         }
         item { Spacer(Modifier.height(12.dp)); SectionHeader("默认下载内容") }
         item {
-            OptionGrid(
-                options = settings.content,
-                onChange = { value ->
-                    viewModel.updateSettings { it.copy(content = value) }
-                },
+            SettingRow(
+                "下载内容",
+                contentSummary(settings.content),
+                description = "视频、音频、字幕、弹幕、封面等默认开关",
+                modifier = Modifier.clickable { contentDialog = true },
             )
         }
         item { Spacer(Modifier.height(12.dp)); SectionHeader("弹幕样式与过滤") }
@@ -1053,48 +1079,21 @@ private fun SettingsScreen(
             SettingRow(
                 "弹幕字体",
                 settings.danmakuFont,
-                description = "使用系统字体族，减少安装包体积",
                 modifier = Modifier.clickable { qualityDialog = "font" },
             )
             SoftDivider()
-            Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
-                Row {
-                    Text("不透明度", modifier = Modifier.weight(1f))
-                    Text("${(settings.danmakuOpacity * 100).roundToInt()}%")
-                }
-                Slider(
-                    value = settings.danmakuOpacity,
-                    onValueChange = { value ->
-                        viewModel.updateSettings { it.copy(danmakuOpacity = value) }
-                    },
-                    valueRange = 0.2f..1f,
-                )
-                Row {
-                    Text("滚动速度", modifier = Modifier.weight(1f))
-                    Text(String.format("%.1fx", settings.danmakuSpeed))
-                }
-                Slider(
-                    value = settings.danmakuSpeed,
-                    onValueChange = { value ->
-                        viewModel.updateSettings { it.copy(danmakuSpeed = value) }
-                    },
-                    valueRange = 0.5f..2f,
-                    steps = 5,
-                )
-            }
+            SettingRow(
+                "弹幕样式",
+                "${(settings.danmakuOpacity * 100).roundToInt()}% · ${String.format("%.1fx", settings.danmakuSpeed)}",
+                description = "不透明度、滚动速度",
+                modifier = Modifier.clickable { danmakuDialog = true },
+            )
             SoftDivider()
-            OutlinedTextField(
-                value = settings.blockedKeywords,
-                onValueChange = { value ->
-                    viewModel.updateSettings { it.copy(blockedKeywords = value) }
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp),
-                label = { Text("屏蔽关键词或正则") },
-                supportingText = { Text("每行一个规则") },
-                minLines = 2,
-                maxLines = 5,
+            SettingRow(
+                "关键词过滤",
+                keywordSummary(settings.blockedKeywords),
+                description = "每行一个关键词或正则",
+                modifier = Modifier.clickable { keywordDialog = true },
             )
         }
         item {
@@ -1120,6 +1119,148 @@ private fun SettingsScreen(
             },
         )
     }
+    if (contentDialog) {
+        DownloadContentDialog(
+            options = settings.content,
+            onChange = { value -> viewModel.updateSettings { it.copy(content = value) } },
+            onDismiss = { contentDialog = false },
+        )
+    }
+    if (danmakuDialog) {
+        DanmakuStyleDialog(
+            settings = settings,
+            onSettings = { value -> viewModel.updateSettings { value } },
+            onDismiss = { danmakuDialog = false },
+        )
+    }
+    if (keywordDialog) {
+        KeywordDialog(
+            value = settings.blockedKeywords,
+            onConfirm = { value -> viewModel.updateSettings { it.copy(blockedKeywords = value) } },
+            onDismiss = { keywordDialog = false },
+        )
+    }
+}
+
+@Composable
+private fun DownloadContentDialog(
+    options: ContentOptions,
+    onChange: (ContentOptions) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("默认下载内容") },
+        text = {
+            Column {
+                Text(
+                    "新任务会默认使用这些内容开关，单个任务仍可在确认面板中调整。",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                OptionGrid(options = options, onChange = onChange)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("完成") }
+        },
+    )
+}
+
+@Composable
+private fun DanmakuStyleDialog(
+    settings: UserSettings,
+    onSettings: (UserSettings) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("弹幕样式") },
+        text = {
+            Column {
+                Row {
+                    Text("不透明度", modifier = Modifier.weight(1f))
+                    Text("${(settings.danmakuOpacity * 100).roundToInt()}%")
+                }
+                Slider(
+                    value = settings.danmakuOpacity,
+                    onValueChange = { value -> onSettings(settings.copy(danmakuOpacity = value)) },
+                    valueRange = 0.2f..1f,
+                )
+                Spacer(Modifier.height(8.dp))
+                Row {
+                    Text("滚动速度", modifier = Modifier.weight(1f))
+                    Text(String.format("%.1fx", settings.danmakuSpeed))
+                }
+                Slider(
+                    value = settings.danmakuSpeed,
+                    onValueChange = { value -> onSettings(settings.copy(danmakuSpeed = value)) },
+                    valueRange = 0.5f..2f,
+                    steps = 5,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("完成") }
+        },
+    )
+}
+
+@Composable
+private fun KeywordDialog(
+    value: String,
+    onConfirm: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var draft by remember(value) { mutableStateOf(value) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("关键词过滤") },
+        text = {
+            OutlinedTextField(
+                value = draft,
+                onValueChange = { draft = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("屏蔽关键词或正则") },
+                supportingText = { Text("每行一个规则") },
+                minLines = 4,
+                maxLines = 8,
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    onConfirm(draft)
+                    onDismiss()
+                },
+            ) {
+                Text("保存")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+        },
+    )
+}
+
+private fun contentSummary(options: ContentOptions): String {
+    val enabled = listOfNotNull(
+        "视频".takeIf { options.video },
+        "音频".takeIf { options.audio },
+        "字幕".takeIf { options.subtitles },
+        "弹幕".takeIf { options.danmaku },
+        "封面".takeIf { options.cover },
+        "元数据".takeIf { options.metadata },
+        "章节".takeIf { options.chapterInfo },
+    )
+    return if (enabled.isEmpty()) "未启用" else enabled.take(3).joinToString("、") +
+        if (enabled.size > 3) "等 ${enabled.size} 项" else ""
+}
+
+private fun keywordSummary(value: String): String {
+    val count = value.lineSequence().map(String::trim).count { it.isNotBlank() }
+    return if (count == 0) "未设置" else "$count 条"
 }
 
 @Composable
