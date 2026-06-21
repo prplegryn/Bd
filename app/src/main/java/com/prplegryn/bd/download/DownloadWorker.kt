@@ -51,8 +51,8 @@ class DownloadWorker(
             val videoFile = video?.let { File(tempDir, "video.m4s") }
             val audioFile = audio?.let { File(tempDir, "audio.m4s") }
             val expectedTotal = listOfNotNull(
-                video?.let { probeLength(listOf(it.url) + it.backups, task.sourceUrl) },
-                audio?.let { probeLength(listOf(it.url) + it.backups, task.sourceUrl) },
+                video?.let { probeLength(listOf(it.url) + it.backups, task.primaryMediaReferer()) },
+                audio?.let { probeLength(listOf(it.url) + it.backups, task.primaryMediaReferer()) },
             ).filter { it > 0 }.sum()
             var completedBytes = 0L
 
@@ -142,80 +142,98 @@ class DownloadWorker(
         label: String,
     ): Long = withContext(Dispatchers.IO) {
         var lastError: Throwable? = null
+        val attemptReports = mutableListOf<String>()
         for (url in urls.filter(String::isNotBlank)) {
-            try {
-                val existing = output.length()
-                val request = app.client.request(url, referer = task.sourceUrl).newBuilder().apply {
-                    if (existing > 0) header("Range", "bytes=$existing-")
-                }.build()
-                app.client.client().newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) {
-                        throw BdNetworkException.fromResponse(
-                            phase = "$label 下载",
-                            request = request,
-                            response = response,
-                            cookiePresent = app.preferences.cookie.isNotBlank(),
-                        )
-                    }
-                    val body = response.body ?: throw IOException("媒体流为空")
-                    val contentLength = body.contentLength().coerceAtLeast(0)
-                    val append = existing > 0 && response.code == 206
-                    val initial = if (append) existing else 0L
-                    val total = if (expectedTotal > 0) {
-                        expectedTotal
-                    } else {
-                        completedBefore + initial + contentLength
-                    }
-                    var downloaded = initial
-                    var lastBytes = initial
-                    var lastTime = System.currentTimeMillis()
-                    RandomAccessFile(output, "rw").use { sink ->
-                        if (append) sink.seek(initial) else sink.setLength(0)
-                        body.byteStream().use { source ->
-                            val buffer = ByteArray(256 * 1024)
-                            while (true) {
-                                coroutineContext.ensureActive()
-                                val read = source.read(buffer)
-                                if (read < 0) break
-                                sink.write(buffer, 0, read)
-                                downloaded += read
-                                val now = System.currentTimeMillis()
-                                if (now - lastTime >= 500) {
-                                    val speed = (downloaded - lastBytes) * 1000 / (now - lastTime)
-                                    val all = completedBefore + downloaded
-                                    val progress = if (total > 0) {
-                                        (all * 94 / total).toInt().coerceIn(1, 94)
-                                    } else {
-                                        1
+            for (attempt in task.mediaAttempts()) {
+                val attemptName = "$label · ${attempt.name} · ${if (attempt.useRange) "Range" else "Full"}"
+                try {
+                    val existing = output.length()
+                    val request = app.client.request(
+                        url = url,
+                        referer = attempt.referer,
+                        media = true,
+                    ).newBuilder().apply {
+                        if (attempt.useRange) header("Range", "bytes=${existing.coerceAtLeast(0)}-")
+                    }.build()
+                    app.client.client().newCall(request).execute().use { response ->
+                        if (!response.isSuccessful) {
+                            throw BdNetworkException.fromResponse(
+                                phase = "$attemptName 下载",
+                                request = request,
+                                response = response,
+                                cookiePresent = app.preferences.cookie.isNotBlank(),
+                            )
+                        }
+                        val body = response.body ?: throw IOException("媒体流为空")
+                        val contentLength = body.contentLength().coerceAtLeast(0)
+                        val append = attempt.useRange && existing > 0 && response.code == 206
+                        val initial = if (append) existing else 0L
+                        val total = if (expectedTotal > 0) {
+                            expectedTotal
+                        } else {
+                            completedBefore + initial + contentLength
+                        }
+                        var downloaded = initial
+                        var lastBytes = initial
+                        var lastTime = System.currentTimeMillis()
+                        RandomAccessFile(output, "rw").use { sink ->
+                            if (append) sink.seek(initial) else sink.setLength(0)
+                            body.byteStream().use { source ->
+                                val buffer = ByteArray(256 * 1024)
+                                while (true) {
+                                    coroutineContext.ensureActive()
+                                    val read = source.read(buffer)
+                                    if (read < 0) break
+                                    sink.write(buffer, 0, read)
+                                    downloaded += read
+                                    val now = System.currentTimeMillis()
+                                    if (now - lastTime >= 500) {
+                                        val speed = (downloaded - lastBytes) * 1000 / (now - lastTime)
+                                        val all = completedBefore + downloaded
+                                        val progress = if (total > 0) {
+                                            (all * 94 / total).toInt().coerceIn(1, 94)
+                                        } else {
+                                            1
+                                        }
+                                        repository.update(task.id) {
+                                            it.copy(
+                                                status = TaskStatus.DOWNLOADING,
+                                                progress = progress,
+                                                downloadedBytes = all,
+                                                totalBytes = total,
+                                                speedBytesPerSecond = speed,
+                                            )
+                                        }
+                                        setForeground(createForeground(task, progress, "正在下载"))
+                                        lastBytes = downloaded
+                                        lastTime = now
                                     }
-                                    repository.update(task.id) {
-                                        it.copy(
-                                            status = TaskStatus.DOWNLOADING,
-                                            progress = progress,
-                                            downloadedBytes = all,
-                                            totalBytes = total,
-                                            speedBytesPerSecond = speed,
-                                        )
-                                    }
-                                    setForeground(createForeground(task, progress, "正在下载"))
-                                    lastBytes = downloaded
-                                    lastTime = now
                                 }
                             }
                         }
+                        return@withContext downloaded
                     }
-                    return@withContext downloaded
+                } catch (error: Throwable) {
+                    lastError = error
+                    attemptReports += "[$attemptName] ${error.compactMessage()}"
                 }
-            } catch (error: Throwable) {
-                lastError = error
             }
         }
-        throw lastError ?: IOException("没有可用的下载地址")
+        throw IOException(
+            buildString {
+                appendLine("所有 $label 地址都下载失败")
+                appendLine("尝试次数：${attemptReports.size}")
+                appendLine("尝试结果：")
+                attemptReports.take(12).forEach { appendLine(it) }
+                if (attemptReports.size > 12) appendLine("还有 ${attemptReports.size - 12} 次失败已省略")
+            }.trim(),
+            lastError,
+        )
     }
 
     private suspend fun probeLength(urls: List<String>, referer: String): Long = withContext(Dispatchers.IO) {
         for (url in urls.filter(String::isNotBlank)) {
-            val request = app.client.request(url, referer = referer).newBuilder()
+            val request = app.client.request(url, referer = referer, media = true).newBuilder()
                 .header("Range", "bytes=0-0")
                 .build()
             runCatching {
@@ -230,6 +248,42 @@ class DownloadWorker(
         }
         0L
     }
+
+    private fun DownloadTask.primaryMediaReferer(): String {
+        episode.bvid.takeIf { it.isNotBlank() }?.let {
+            return "https://www.bilibili.com/video/$it"
+        }
+        episode.epId?.let {
+            return "https://www.bilibili.com/bangumi/play/ep$it"
+        }
+        return sourceUrl
+    }
+
+    private fun DownloadTask.mediaAttempts(): List<MediaAttempt> {
+        val referers = listOf(
+            MediaAttempt("规范视频页", primaryMediaReferer(), useRange = true),
+            MediaAttempt("原始入口页", sourceUrl, useRange = true),
+            MediaAttempt("站点根来源", "https://www.bilibili.com/", useRange = true),
+            MediaAttempt("规范视频页", primaryMediaReferer(), useRange = false),
+            MediaAttempt("原始入口页", sourceUrl, useRange = false),
+            MediaAttempt("站点根来源", "https://www.bilibili.com/", useRange = false),
+        )
+        return referers.distinctBy { "${it.referer}|${it.useRange}" }
+    }
+
+    private fun Throwable.compactMessage(): String =
+        (message ?: this::class.java.name)
+            .lineSequence()
+            .filter { it.isNotBlank() }
+            .take(8)
+            .joinToString(" | ")
+            .take(1200)
+
+    private data class MediaAttempt(
+        val name: String,
+        val referer: String,
+        val useRange: Boolean,
+    )
 
     private fun failureReport(task: DownloadTask, error: Throwable): String = buildString {
         appendLine("下载失败")

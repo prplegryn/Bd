@@ -36,6 +36,7 @@ class BdNetworkException(
     requestUrl: String,
     referer: String,
     cookiePresent: Boolean,
+    requestHeaders: String = "",
     httpCode: Int? = null,
     httpMessage: String = "",
     responsePreview: String = "",
@@ -47,6 +48,10 @@ class BdNetworkException(
         if (httpCode != null) appendLine("状态：HTTP $httpCode ${httpMessage.ifBlank { "" }}".trimEnd())
         appendLine("Referer：${sanitizeUrlForReport(referer)}")
         appendLine("Cookie：${if (cookiePresent) "已发送" else "未发送或为空"}")
+        if (requestHeaders.isNotBlank()) {
+            appendLine("请求头摘要：")
+            appendLine(requestHeaders)
+        }
         if (responsePreview.isNotBlank()) {
             appendLine("响应摘要：")
             appendLine(responsePreview)
@@ -77,6 +82,7 @@ class BdNetworkException(
                 requestUrl = request.url.toString(),
                 referer = request.header("Referer").orEmpty(),
                 cookiePresent = cookiePresent,
+                requestHeaders = safeHeaderSummary(request),
                 httpCode = response.code,
                 httpMessage = response.message,
                 responsePreview = preview,
@@ -162,14 +168,26 @@ class BiliClient(private val preferences: AppPreferences) {
         }
     }
 
-    fun request(url: String, referer: String = DEFAULT_REFERER): Request = Request.Builder()
+    fun request(
+        url: String,
+        referer: String = DEFAULT_REFERER,
+        media: Boolean = false,
+        userAgent: String = if (media) MEDIA_USER_AGENT else USER_AGENT,
+    ): Request = Request.Builder()
         .url(url.replace("http://", "https://"))
-        .header("User-Agent", USER_AGENT)
+        .header("User-Agent", userAgent)
         .header("Referer", normalizedReferer(referer))
-        .header("Origin", "https://www.bilibili.com")
         .header("Accept", "*/*")
         .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
         .apply {
+            if (media) {
+                header("Accept-Encoding", "identity")
+                header("Sec-Fetch-Dest", "video")
+                header("Sec-Fetch-Mode", "no-cors")
+                header("Sec-Fetch-Site", "cross-site")
+            } else {
+                header("Origin", "https://www.bilibili.com")
+            }
             preferences.cookie.takeIf { it.isNotBlank() }?.let { header("Cookie", it) }
         }
         .build()
@@ -672,7 +690,9 @@ class BiliClient(private val preferences: AppPreferences) {
 
     private companion object {
         const val USER_AGENT =
-            "Mozilla/5.0 (Linux; Android 15; Bd) AppleWebKit/537.36 Chrome/131 Mobile Safari/537.36"
+            "Mozilla/5.0 (Linux; Android 15; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
+        const val MEDIA_USER_AGENT =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
         const val DEFAULT_REFERER = "https://www.bilibili.com/"
     }
 }
@@ -695,3 +715,29 @@ private fun sanitizeUrlForReport(value: String): String {
         "$base?…(${queryKeys.joinToString(",")})".take(320)
     }
 }
+
+private fun safeHeaderSummary(request: Request): String = buildString {
+    val allowList = setOf(
+        "Accept",
+        "Accept-Encoding",
+        "Accept-Language",
+        "Origin",
+        "Range",
+        "Referer",
+        "Sec-Fetch-Dest",
+        "Sec-Fetch-Mode",
+        "Sec-Fetch-Site",
+        "User-Agent",
+    )
+    request.headers.names()
+        .filter { it in allowList }
+        .sorted()
+        .forEach { name ->
+            val value = if (name == "Referer") {
+                sanitizeUrlForReport(request.header(name).orEmpty())
+            } else {
+                request.header(name).orEmpty()
+            }
+            appendLine("$name: $value")
+        }
+}.trim()
