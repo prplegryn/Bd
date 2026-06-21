@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -33,7 +34,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.List
-import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
@@ -52,8 +52,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -169,21 +167,50 @@ fun BdApp(viewModel: MainViewModel) {
 }
 
 @Composable
-private fun NavigationDestination(
+private fun RowScope.NavigationDestination(
     selected: Boolean,
     label: String,
     icon: @Composable () -> Unit,
     onClick: () -> Unit,
 ) {
-    NavigationBarItem(
-        selected = selected,
-        onClick = onClick,
-        icon = icon,
-        label = { Text(label) },
-        colors = NavigationBarItemDefaults.colors(
-            indicatorColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f),
-        ),
-    )
+    Column(
+        modifier = Modifier
+            .weight(1f)
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = if (selected) {
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)
+            } else {
+                Color.Transparent
+            },
+            contentColor = if (selected) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+        ) {
+            Box(
+                modifier = Modifier.padding(horizontal = 18.dp, vertical = 4.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                icon()
+            }
+        }
+        Text(
+            label,
+            style = MaterialTheme.typography.labelMedium,
+            color = if (selected) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+        )
+    }
 }
 
 @Composable
@@ -599,7 +626,7 @@ private fun TasksScreen(viewModel: MainViewModel) {
             )
         } else {
             LazyColumn(
-                contentPadding = PaddingValues(vertical = 10.dp, bottom = 28.dp),
+                contentPadding = PaddingValues(top = 10.dp, bottom = 28.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
                 items(visible, key = { it.id }) { task ->
@@ -798,7 +825,7 @@ private fun TaskAction(
         TaskStatus.DOWNLOADING,
         TaskStatus.MERGING
         -> IconButton(onClick = onPause) {
-            Icon(Icons.Default.Pause, contentDescription = "暂停")
+            Text("Ⅱ", fontWeight = FontWeight.Bold, fontSize = 18.sp)
         }
         TaskStatus.PAUSED,
         TaskStatus.CANCELLED
