@@ -57,7 +57,18 @@ object MediaMerger {
             info.offset = 0
             info.size = size
             info.presentationTimeUs = extractor.sampleTime.coerceAtLeast(0)
-            info.flags = extractor.sampleFlags
+            val sampleFlags = extractor.sampleFlags
+            info.flags =
+                (if (sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC != 0) {
+                    MediaCodec.BUFFER_FLAG_KEY_FRAME
+                } else {
+                    0
+                }) or
+                (if (sampleFlags and MediaExtractor.SAMPLE_FLAG_PARTIAL_FRAME != 0) {
+                    MediaCodec.BUFFER_FLAG_PARTIAL_FRAME
+                } else {
+                    0
+                })
             muxer.writeSampleData(track.targetTrack, buffer, info)
             extractor.advance()
         }
@@ -76,4 +87,3 @@ object MediaMerger {
 
     private const val DEFAULT_BUFFER_SIZE = 2 * 1024 * 1024
 }
-
