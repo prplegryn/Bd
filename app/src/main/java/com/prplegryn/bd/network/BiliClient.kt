@@ -11,6 +11,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
@@ -28,6 +29,61 @@ data class AccountInfo(
     val name: String,
     val vip: Boolean,
 )
+
+class BdNetworkException(
+    phase: String,
+    method: String,
+    requestUrl: String,
+    referer: String,
+    cookiePresent: Boolean,
+    httpCode: Int? = null,
+    httpMessage: String = "",
+    responsePreview: String = "",
+) : IOException(
+    buildString {
+        appendLine("网络请求失败")
+        appendLine("阶段：$phase")
+        appendLine("请求：$method ${sanitizeUrlForReport(requestUrl)}")
+        if (httpCode != null) appendLine("状态：HTTP $httpCode ${httpMessage.ifBlank { "" }}".trimEnd())
+        appendLine("Referer：${sanitizeUrlForReport(referer)}")
+        appendLine("Cookie：${if (cookiePresent) "已发送" else "未发送或为空"}")
+        if (responsePreview.isNotBlank()) {
+            appendLine("响应摘要：")
+            appendLine(responsePreview)
+        }
+        if (httpCode == 403) {
+            appendLine("建议：")
+            appendLine("1. 重新在内置浏览器登录，并确认账号状态显示为已登录。")
+            appendLine("2. 若刚切换清晰度/会员内容，请重新识别链接后再下载。")
+            appendLine("3. 如果仍为 403，复制本报错反馈；通常是 Cookie 失效、来源页防盗链或目标资源权限不足。")
+        }
+    },
+) {
+    companion object {
+        fun fromResponse(
+            phase: String,
+            request: Request,
+            response: Response,
+            cookiePresent: Boolean,
+        ): BdNetworkException {
+            val preview = runCatching {
+                response.peekBody(2048).string()
+                    .replace(Regex("\\s+"), " ")
+                    .take(800)
+            }.getOrDefault("")
+            return BdNetworkException(
+                phase = phase,
+                method = request.method,
+                requestUrl = request.url.toString(),
+                referer = request.header("Referer").orEmpty(),
+                cookiePresent = cookiePresent,
+                httpCode = response.code,
+                httpMessage = response.message,
+                responsePreview = preview,
+            )
+        }
+    }
+}
 
 class BiliClient(private val preferences: AppPreferences) {
     private val http = OkHttpClient.Builder()
@@ -94,23 +150,25 @@ class BiliClient(private val preferences: AppPreferences) {
 
     suspend fun getText(url: String): String = withContext(Dispatchers.IO) {
         execute(url).use { response ->
-            if (!response.isSuccessful) throw IOException("网络请求失败：HTTP ${response.code}")
+            if (!response.isSuccessful) throw detailedHttpError("接口请求", response)
             response.body?.string() ?: throw IOException("服务器返回空内容")
         }
     }
 
     suspend fun getBytes(url: String): ByteArray = withContext(Dispatchers.IO) {
         execute(url).use { response ->
-            if (!response.isSuccessful) throw IOException("网络请求失败：HTTP ${response.code}")
+            if (!response.isSuccessful) throw detailedHttpError("文件请求", response)
             response.body?.bytes() ?: throw IOException("服务器返回空内容")
         }
     }
 
-    fun request(url: String): Request = Request.Builder()
+    fun request(url: String, referer: String = DEFAULT_REFERER): Request = Request.Builder()
         .url(url.replace("http://", "https://"))
         .header("User-Agent", USER_AGENT)
-        .header("Referer", "https://www.bilibili.com/")
+        .header("Referer", normalizedReferer(referer))
         .header("Origin", "https://www.bilibili.com")
+        .header("Accept", "*/*")
+        .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
         .apply {
             preferences.cookie.takeIf { it.isNotBlank() }?.let { header("Cookie", it) }
         }
@@ -552,17 +610,41 @@ class BiliClient(private val preferences: AppPreferences) {
 
     private fun getJsonBlocking(url: String): JSONObject {
         execute(url).use { response ->
-            if (!response.isSuccessful) throw IOException("网络请求失败：HTTP ${response.code}")
+            if (!response.isSuccessful) throw detailedHttpError("接口请求", response)
             return JSONObject(response.body?.string() ?: throw IOException("服务器返回空内容"))
         }
     }
 
     private fun checkedData(json: JSONObject): JSONObject {
         if (json.optInt("code") != 0) {
-            throw IOException(json.optString("message").ifBlank { "接口返回错误 ${json.optInt("code")}" })
+            throw IOException(
+                buildString {
+                    appendLine("接口返回业务错误")
+                    appendLine("状态码：${json.optInt("code")}")
+                    appendLine("信息：${json.optString("message").ifBlank { "无" }}")
+                    json.optString("ttl").takeIf { it.isNotBlank() }?.let { appendLine("TTL：$it") }
+                },
+            )
         }
         return json.optJSONObject("data") ?: json.optJSONObject("result")
             ?: throw IOException("接口没有返回数据")
+    }
+
+    private fun detailedHttpError(phase: String, response: Response): BdNetworkException =
+        BdNetworkException.fromResponse(
+            phase = phase,
+            request = response.request,
+            response = response,
+            cookiePresent = preferences.cookie.isNotBlank(),
+        )
+
+    private fun normalizedReferer(value: String): String {
+        val trimmed = value.trim()
+        return if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+            trimmed.replace("http://", "https://")
+        } else {
+            DEFAULT_REFERER
+        }
     }
 
     private fun stringList(array: JSONArray?): List<String> = buildList {
@@ -591,8 +673,25 @@ class BiliClient(private val preferences: AppPreferences) {
     private companion object {
         const val USER_AGENT =
             "Mozilla/5.0 (Linux; Android 15; Bd) AppleWebKit/537.36 Chrome/131 Mobile Safari/537.36"
+        const val DEFAULT_REFERER = "https://www.bilibili.com/"
     }
 }
 
 fun encodeQuery(value: String): String =
     URLEncoder.encode(value, StandardCharsets.UTF_8.toString())
+
+private fun sanitizeUrlForReport(value: String): String {
+    val uri = runCatching { Uri.parse(value) }.getOrNull() ?: return value.take(240)
+    val base = buildString {
+        append(uri.scheme ?: "https")
+        append("://")
+        append(uri.host ?: "")
+        append(uri.encodedPath ?: "")
+    }.ifBlank { value.substringBefore('?') }
+    val queryKeys = runCatching { uri.queryParameterNames.sorted() }.getOrDefault(emptyList())
+    return if (queryKeys.isEmpty()) {
+        base.take(260)
+    } else {
+        "$base?…(${queryKeys.joinToString(",")})".take(320)
+    }
+}

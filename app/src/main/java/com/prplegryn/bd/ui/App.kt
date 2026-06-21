@@ -2,6 +2,7 @@ package com.prplegryn.bd.ui
 
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -75,6 +76,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -698,6 +700,7 @@ private fun TaskRow(
     onRemove: () -> Unit,
 ) {
     val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
     Surface(
         modifier = Modifier
             .padding(horizontal = 16.dp, vertical = 6.dp)
@@ -782,14 +785,44 @@ private fun TaskRow(
                 }
             }
             if (task.error.isNotBlank()) {
-                Text(
-                    task.error,
-                    modifier = Modifier.padding(top = 8.dp),
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 10.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.64f),
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            "详细报错",
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                        Text(
+                            task.error,
+                            modifier = Modifier.padding(top = 6.dp),
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 10,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 6.dp),
+                            horizontalArrangement = Arrangement.End,
+                        ) {
+                            TextButton(
+                                onClick = {
+                                    clipboard.setText(AnnotatedString(taskErrorReport(task)))
+                                    Toast.makeText(context, "已复制报错", Toast.LENGTH_SHORT).show()
+                                },
+                            ) {
+                                Text("复制报错")
+                            }
+                        }
+                    }
+                }
             }
             if (task.status == TaskStatus.COMPLETED && task.outputUri.isNotBlank()) {
                 TextButton(
@@ -809,6 +842,19 @@ private fun TaskRow(
             }
         }
     }
+}
+
+private fun taskErrorReport(task: DownloadTask): String {
+    if (task.error.startsWith("下载失败")) return task.error
+    return buildString {
+        appendLine("下载失败")
+        appendLine("任务：${task.episode.title}")
+        appendLine("来源：${task.sourceTitle}")
+        appendLine("入口：${task.sourceUrl}")
+        appendLine("编号：${task.episode.bvid.ifBlank { "av${task.episode.aid}" }} / cid=${task.episode.cid}")
+        appendLine()
+        appendLine(task.error)
+    }.trim()
 }
 
 @Composable

@@ -14,7 +14,7 @@ import com.prplegryn.bd.data.AudioStream
 import com.prplegryn.bd.data.DownloadTask
 import com.prplegryn.bd.data.TaskStatus
 import com.prplegryn.bd.data.VideoStream
-import com.prplegryn.bd.network.encodeQuery
+import com.prplegryn.bd.network.BdNetworkException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
@@ -51,8 +51,8 @@ class DownloadWorker(
             val videoFile = video?.let { File(tempDir, "video.m4s") }
             val audioFile = audio?.let { File(tempDir, "audio.m4s") }
             val expectedTotal = listOfNotNull(
-                video?.let { probeLength(listOf(it.url) + it.backups) },
-                audio?.let { probeLength(listOf(it.url) + it.backups) },
+                video?.let { probeLength(listOf(it.url) + it.backups, task.sourceUrl) },
+                audio?.let { probeLength(listOf(it.url) + it.backups, task.sourceUrl) },
             ).filter { it > 0 }.sum()
             var completedBytes = 0L
 
@@ -67,6 +67,7 @@ class DownloadWorker(
                     output = videoFile,
                     completedBefore = completedBytes,
                     expectedTotal = expectedTotal,
+                    label = "视频流",
                 )
             }
             if (audio != null && audioFile != null) {
@@ -76,6 +77,7 @@ class DownloadWorker(
                     output = audioFile,
                     completedBefore = completedBytes,
                     expectedTotal = expectedTotal,
+                    label = "音频流",
                 )
             }
 
@@ -121,7 +123,7 @@ class DownloadWorker(
                 it.copy(
                     status = TaskStatus.FAILED,
                     speedBytesPerSecond = 0,
-                    error = error.message ?: "下载失败",
+                    error = failureReport(task, error),
                 )
             }
             Result.failure()
@@ -137,16 +139,24 @@ class DownloadWorker(
         output: File,
         completedBefore: Long,
         expectedTotal: Long,
+        label: String,
     ): Long = withContext(Dispatchers.IO) {
         var lastError: Throwable? = null
         for (url in urls.filter(String::isNotBlank)) {
             try {
                 val existing = output.length()
-                val request = app.client.request(url).newBuilder().apply {
+                val request = app.client.request(url, referer = task.sourceUrl).newBuilder().apply {
                     if (existing > 0) header("Range", "bytes=$existing-")
                 }.build()
                 app.client.client().newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) throw IOException("媒体下载失败：HTTP ${response.code}")
+                    if (!response.isSuccessful) {
+                        throw BdNetworkException.fromResponse(
+                            phase = "$label 下载",
+                            request = request,
+                            response = response,
+                            cookiePresent = app.preferences.cookie.isNotBlank(),
+                        )
+                    }
                     val body = response.body ?: throw IOException("媒体流为空")
                     val contentLength = body.contentLength().coerceAtLeast(0)
                     val append = existing > 0 && response.code == 206
@@ -203,9 +213,9 @@ class DownloadWorker(
         throw lastError ?: IOException("没有可用的下载地址")
     }
 
-    private suspend fun probeLength(urls: List<String>): Long = withContext(Dispatchers.IO) {
+    private suspend fun probeLength(urls: List<String>, referer: String): Long = withContext(Dispatchers.IO) {
         for (url in urls.filter(String::isNotBlank)) {
-            val request = app.client.request(url).newBuilder()
+            val request = app.client.request(url, referer = referer).newBuilder()
                 .header("Range", "bytes=0-0")
                 .build()
             runCatching {
@@ -220,6 +230,33 @@ class DownloadWorker(
         }
         0L
     }
+
+    private fun failureReport(task: DownloadTask, error: Throwable): String = buildString {
+        appendLine("下载失败")
+        appendLine("任务：${task.episode.title}")
+        appendLine("来源：${task.sourceTitle}")
+        appendLine("入口：${task.sourceUrl}")
+        appendLine(
+            "编号：" +
+                listOfNotNull(
+                    task.episode.bvid.takeIf { it.isNotBlank() },
+                    task.episode.aid.takeIf { it > 0 }?.let { "av$it" },
+                    "cid=${task.episode.cid}",
+                    task.episode.epId?.let { "ep=$it" },
+                ).joinToString(" / "),
+        )
+        appendLine(
+            "偏好：视频 ${task.preferredVideoQuality} / 音频 ${task.preferredAudioQuality} / " +
+                "编码 ${task.preferredCodec}",
+        )
+        appendLine("账号 Cookie：${if (app.preferences.cookie.isNotBlank()) "已保存" else "未保存"}")
+        appendLine()
+        appendLine(error.message ?: error::class.java.name)
+        error.cause?.message?.takeIf { it.isNotBlank() }?.let {
+            appendLine()
+            appendLine("底层原因：$it")
+        }
+    }.trim()
 
     private suspend fun downloadAuxiliaryFiles(
         task: DownloadTask,
