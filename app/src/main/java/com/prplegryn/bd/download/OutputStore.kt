@@ -3,8 +3,11 @@ package com.prplegryn.bd.download
 import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
+import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import androidx.annotation.RequiresApi
+import androidx.core.content.FileProvider
 import androidx.documentfile.provider.DocumentFile
 import com.prplegryn.bd.data.UserSettings
 import java.io.File
@@ -17,8 +20,10 @@ class OutputStore(
     fun write(source: File, requestedName: String, mime: String): Uri {
         return if (settings.storageTreeUri.isNotBlank()) {
             writeToTree(source, requestedName, mime)
-        } else {
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             writeToDownloads(source, requestedName, mime)
+        } else {
+            writeToLegacyDownloads(source, requestedName)
         }
     }
 
@@ -55,6 +60,7 @@ class OutputStore(
         return document.uri
     }
 
+    @RequiresApi(Build.VERSION_CODES.Q)
     private fun writeToDownloads(source: File, requestedName: String, mime: String): Uri {
         val name = resolveMediaName(requestedName)
         val values = ContentValues().apply {
@@ -83,6 +89,19 @@ class OutputStore(
         }
     }
 
+    private fun writeToLegacyDownloads(source: File, requestedName: String): Uri {
+        val base = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+            ?: context.filesDir
+        val folder = File(base, "Bd").apply { mkdirs() }
+        val target = resolveLegacyName(folder, requestedName)
+        source.copyTo(target, overwrite = settings.overwrite)
+        return FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.files",
+            target,
+        )
+    }
+
     private fun resolveDocumentName(folder: DocumentFile, requested: String): String {
         if (settings.overwrite) {
             folder.findFile(requested)?.delete()
@@ -96,6 +115,7 @@ class OutputStore(
         return "$base ($index)$extension"
     }
 
+    @RequiresApi(Build.VERSION_CODES.Q)
     private fun resolveMediaName(requested: String): String {
         if (settings.overwrite) {
             context.contentResolver.query(
@@ -116,5 +136,18 @@ class OutputStore(
         }
         return requested
     }
-}
 
+    private fun resolveLegacyName(folder: File, requested: String): File {
+        val direct = File(folder, requested)
+        if (settings.overwrite || !direct.exists()) return direct
+        val base = requested.substringBeforeLast('.', requested)
+        val extension = requested.substringAfterLast('.', "").let { if (it.isBlank()) "" else ".$it" }
+        var index = 2
+        var candidate: File
+        do {
+            candidate = File(folder, "$base ($index)$extension")
+            index++
+        } while (candidate.exists())
+        return candidate
+    }
+}
