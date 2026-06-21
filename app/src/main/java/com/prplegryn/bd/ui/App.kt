@@ -3,6 +3,7 @@ package com.prplegryn.bd.ui
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -12,6 +13,7 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -411,101 +413,122 @@ private fun TaskSetupSheet(
             )
         },
     ) {
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxHeight(0.92f)
-                .navigationBarsPadding(),
-            contentPadding = PaddingValues(bottom = 20.dp),
+        Column(
+            modifier = Modifier.fillMaxHeight(0.92f),
         ) {
-            item {
-                Row(
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    AsyncImage(
-                        model = source.coverUrl.replace("http://", "https://"),
-                        contentDescription = null,
-                        modifier = Modifier
-                            .size(width = 104.dp, height = 68.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant),
-                    )
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            sourceTypeLabel(source.type),
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                        Text(
-                            source.title,
-                            style = MaterialTheme.typography.titleMedium,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        if (source.owner.isNotBlank()) {
-                            Text(
-                                source.owner,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                }
-            }
-            if (source.episodes.size > 1) {
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(bottom = 12.dp),
+            ) {
                 item {
-                    SettingRow(
-                        title = "选集",
-                        value = "已选 $selectedCount / ${source.episodes.size}",
-                        modifier = Modifier.clickable { showEpisodes = !showEpisodes },
-                    )
-                }
-                if (showEpisodes) {
-                    item {
-                        Row(
+                    Row(
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        AsyncImage(
+                            model = source.coverUrl.replace("http://", "https://"),
+                            contentDescription = null,
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 20.dp, vertical = 4.dp),
-                            horizontalArrangement = Arrangement.End,
-                        ) {
-                            TextButton(onClick = { onSelectAll(selectedCount != source.episodes.size) }) {
-                                Text(if (selectedCount == source.episodes.size) "取消全选" else "全选")
-                            }
-                        }
-                    }
-                    items(source.episodes, key = { it.index }) { episode ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onToggleEpisode(episode.index) }
-                                .padding(horizontal = 16.dp, vertical = 7.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Checkbox(
-                                checked = episode.index in selectedEpisodes,
-                                onCheckedChange = { onToggleEpisode(episode.index) },
+                                .size(width = 104.dp, height = 68.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant),
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                sourceTypeLabel(source.type),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary,
                             )
                             Text(
-                                "${episode.index}. ${episode.title}",
-                                modifier = Modifier.weight(1f),
+                                source.title,
+                                style = MaterialTheme.typography.titleMedium,
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
                             )
+                            if (source.owner.isNotBlank()) {
+                                Text(
+                                    source.owner,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
                     }
                 }
-                item { HorizontalDivider(Modifier.padding(vertical = 8.dp)) }
+                if (source.episodes.size > 1) {
+                    item {
+                        SettingRow(
+                            title = "选集",
+                            value = "已选 $selectedCount / ${source.episodes.size}",
+                            modifier = Modifier.clickable { showEpisodes = !showEpisodes },
+                        )
+                    }
+                    if (showEpisodes) {
+                        item {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 20.dp, vertical = 4.dp),
+                                horizontalArrangement = Arrangement.End,
+                            ) {
+                                TextButton(onClick = { onSelectAll(selectedCount != source.episodes.size) }) {
+                                    Text(if (selectedCount == source.episodes.size) "取消全选" else "全选")
+                                }
+                            }
+                        }
+                        items(source.episodes, key = { it.index }) { episode ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onToggleEpisode(episode.index) }
+                                    .padding(horizontal = 16.dp, vertical = 7.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Checkbox(
+                                    checked = episode.index in selectedEpisodes,
+                                    onCheckedChange = { onToggleEpisode(episode.index) },
+                                )
+                                Text(
+                                    "${episode.index}. ${episode.title}",
+                                    modifier = Modifier.weight(1f),
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
+                    item { HorizontalDivider(Modifier.padding(vertical = 8.dp)) }
+                }
+                item {
+                    SectionHeader("下载内容")
+                    OptionGrid(options = options, onChange = { options = it })
+                }
             }
-            item {
-                SectionHeader("下载内容")
-                OptionGrid(options = options, onChange = { options = it })
-            }
-            item {
+            Surface(
+                tonalElevation = 3.dp,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            ) {
                 Column(
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(horizontal = 20.dp, vertical = 14.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "已选 $selectedCount / ${source.episodes.size}",
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        Text(
+                            contentSummary(options),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                        )
+                    }
                     Text(
                         "${videoQualityLabel(settings.videoQuality)} · " +
                             "${audioQualityLabel(settings.audioQuality)} · ${settings.videoCodec.uppercase()}",
@@ -514,10 +537,7 @@ private fun TaskSetupSheet(
                     )
                     Button(
                         onClick = { onStart(options) },
-                        enabled = selectedCount > 0 && (
-                            options.video || options.audio || options.subtitles ||
-                                options.danmaku || options.cover || options.metadata
-                            ),
+                        enabled = selectedCount > 0 && options.hasAnyContent(),
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(52.dp),
@@ -531,27 +551,64 @@ private fun TaskSetupSheet(
     }
 }
 
+private data class ContentToggle(
+    val title: String,
+    val checked: Boolean,
+    val update: (Boolean) -> ContentOptions,
+)
+
+private fun ContentOptions.hasAnyContent(): Boolean =
+    video || audio || subtitles || danmaku || cover || saveCover || metadata || chapterInfo
+
 @Composable
 private fun OptionGrid(
     options: ContentOptions,
     onChange: (ContentOptions) -> Unit,
 ) {
-    Column(modifier = Modifier.padding(horizontal = 12.dp)) {
-        OptionSwitch("视频", options.video) { onChange(options.copy(video = it)) }
-        OptionSwitch("音频", options.audio) { onChange(options.copy(audio = it)) }
-        OptionSwitch("字幕", options.subtitles) { onChange(options.copy(subtitles = it)) }
-        OptionSwitch("弹幕", options.danmaku) { onChange(options.copy(danmaku = it)) }
-        OptionSwitch("封面文件", options.cover) { onChange(options.copy(cover = it)) }
-        OptionSwitch("媒体元数据", options.metadata) { onChange(options.copy(metadata = it)) }
-        OptionSwitch("章节信息", options.chapterInfo) { onChange(options.copy(chapterInfo = it)) }
+    val toggles = listOf(
+        ContentToggle("视频", options.video) { options.copy(video = it) },
+        ContentToggle("音频", options.audio) { options.copy(audio = it) },
+        ContentToggle("字幕", options.subtitles) { options.copy(subtitles = it) },
+        ContentToggle("弹幕", options.danmaku) { options.copy(danmaku = it) },
+        ContentToggle("封面", options.cover) { options.copy(cover = it) },
+        ContentToggle("元数据", options.metadata) { options.copy(metadata = it) },
+        ContentToggle("章节", options.chapterInfo) { options.copy(chapterInfo = it) },
+    )
+    Column(
+        modifier = Modifier.padding(horizontal = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        toggles.chunked(2).forEach { row ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                row.forEach { item ->
+                    OptionSwitch(
+                        title = item.title,
+                        checked = item.checked,
+                        onCheckedChange = { onChange(item.update(it)) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                if (row.size == 1) {
+                    Spacer(Modifier.weight(1f))
+                }
+            }
+        }
         if (options.danmaku) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                    .padding(top = 2.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("弹幕格式", modifier = Modifier.weight(1f))
+                Text(
+                    "弹幕格式",
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 listOf(DanmakuFormat.ASS, DanmakuFormat.XML).forEach { format ->
                     FilterChip(
                         selected = options.danmakuFormat == format,
@@ -569,17 +626,40 @@ private fun OptionGrid(
 private fun OptionSwitch(
     title: String,
     checked: Boolean,
+    modifier: Modifier = Modifier,
     onCheckedChange: (Boolean) -> Unit,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onCheckedChange(!checked) }
-            .padding(horizontal = 8.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(14.dp),
+        color = if (checked) {
+            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.46f)
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.52f)
+        },
+        border = BorderStroke(
+            1.dp,
+            if (checked) {
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.42f)
+            } else {
+                MaterialTheme.colorScheme.outlineVariant
+            },
+        ),
     ) {
-        Text(title, modifier = Modifier.weight(1f))
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onCheckedChange(!checked) }
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                title,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Switch(checked = checked, onCheckedChange = onCheckedChange)
+        }
     }
 }
 
@@ -656,17 +736,12 @@ private fun CompactTaskRow(task: DownloadTask, onClick: () -> Unit) {
                 .clip(RoundedCornerShape(10.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant),
         )
-        Column(modifier = Modifier.weight(1f)) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
             Text(task.episode.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(
-                taskStatusLabel(task.status),
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (task.status == TaskStatus.FAILED) {
-                    MaterialTheme.colorScheme.error
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-            )
+            StatusPill(task.status)
             if (task.status in activeTaskStatuses) {
                 LinearProgressIndicator(
                     progress = { task.progress / 100f },
@@ -735,16 +810,8 @@ private fun TaskRow(
             }
             Spacer(Modifier.height(12.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    taskStatusLabel(task.status),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = when (task.status) {
-                        TaskStatus.FAILED -> MaterialTheme.colorScheme.error
-                        TaskStatus.COMPLETED -> MaterialTheme.colorScheme.primary
-                        else -> MaterialTheme.colorScheme.onSurface
-                    },
-                    modifier = Modifier.weight(1f),
-                )
+                StatusPill(task.status, modifier = Modifier.weight(1f, fill = false))
+                Spacer(Modifier.weight(1f))
                 if (task.speedBytesPerSecond > 0) {
                     Text(
                         "${formatBytes(task.speedBytesPerSecond)}/s",
@@ -853,6 +920,38 @@ private fun TaskRow(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun StatusPill(
+    status: TaskStatus,
+    modifier: Modifier = Modifier,
+) {
+    val container = when (status) {
+        TaskStatus.FAILED -> MaterialTheme.colorScheme.errorContainer
+        TaskStatus.COMPLETED -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.66f)
+        TaskStatus.PAUSED,
+        TaskStatus.CANCELLED -> MaterialTheme.colorScheme.surfaceVariant
+        else -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.58f)
+    }
+    val content = when (status) {
+        TaskStatus.FAILED -> MaterialTheme.colorScheme.onErrorContainer
+        TaskStatus.COMPLETED -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(999.dp),
+        color = container,
+    ) {
+        Text(
+            taskStatusLabel(status),
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+            style = MaterialTheme.typography.labelLarge,
+            color = content,
+            maxLines = 1,
+        )
     }
 }
 
@@ -999,112 +1098,122 @@ private fun SettingsScreen(
         }
         item { Spacer(Modifier.height(16.dp)); SectionHeader("媒体偏好") }
         item {
-            SettingRow(
-                "视频画质",
-                videoQualityLabel(settings.videoQuality),
-                modifier = Modifier.clickable { qualityDialog = "video" },
-            )
-            SoftDivider()
-            SettingRow(
-                "音频质量",
-                audioQualityLabel(settings.audioQuality),
-                modifier = Modifier.clickable { qualityDialog = "audio" },
-            )
-            SoftDivider()
-            SettingRow(
-                "视频编码",
-                settings.videoCodec.uppercase(),
-                description = "优先选择；不可用时自动回退",
-                modifier = Modifier.clickable { qualityDialog = "codec" },
-            )
+            SettingsGroup {
+                SettingRow(
+                    "视频画质",
+                    videoQualityLabel(settings.videoQuality),
+                    modifier = Modifier.clickable { qualityDialog = "video" },
+                )
+                SoftDivider()
+                SettingRow(
+                    "音频质量",
+                    audioQualityLabel(settings.audioQuality),
+                    modifier = Modifier.clickable { qualityDialog = "audio" },
+                )
+                SoftDivider()
+                SettingRow(
+                    "视频编码",
+                    settings.videoCodec.uppercase(),
+                    description = "优先选择；不可用时自动回退",
+                    modifier = Modifier.clickable { qualityDialog = "codec" },
+                )
+            }
         }
         item { Spacer(Modifier.height(12.dp)); SectionHeader("存储与任务") }
         item {
-            SettingRow(
-                "下载目录",
-                if (settings.storageTreeUri.isBlank()) "系统下载/Bd" else "自定义目录/Bd",
-                description = if (settings.storageTreeUri.isBlank()) {
-                    "无需存储权限；也可以选择外部目录"
-                } else {
-                    Uri.parse(settings.storageTreeUri).lastPathSegment.orEmpty()
-                },
-                modifier = Modifier.clickable { folderLauncher.launch(null) },
-            )
-            SoftDivider()
-            SettingRow(
-                "覆盖同名文件",
-                description = "关闭时自动添加序号，避免误删已有内容",
-                showChevron = false,
-                trailing = {
-                    Switch(
-                        checked = settings.overwrite,
-                        onCheckedChange = {
-                            viewModel.updateSettings { value -> value.copy(overwrite = it) }
+            SettingsGroup {
+                SettingRow(
+                    "下载目录",
+                    if (settings.storageTreeUri.isBlank()) "系统下载/Bd" else "自定义目录/Bd",
+                    description = if (settings.storageTreeUri.isBlank()) {
+                        "无需存储权限；也可以选择外部目录"
+                    } else {
+                        Uri.parse(settings.storageTreeUri).lastPathSegment.orEmpty()
+                    },
+                    modifier = Modifier.clickable { folderLauncher.launch(null) },
+                )
+                SoftDivider()
+                SettingRow(
+                    "覆盖同名文件",
+                    description = "关闭时自动添加序号，避免误删已有内容",
+                    showChevron = false,
+                    trailing = {
+                        Switch(
+                            checked = settings.overwrite,
+                            onCheckedChange = {
+                                viewModel.updateSettings { value -> value.copy(overwrite = it) }
+                            },
+                        )
+                    },
+                )
+                SoftDivider()
+                Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+                    Row {
+                        Text("并行任务数", modifier = Modifier.weight(1f))
+                        Text(
+                            settings.parallelTasks.toString(),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Slider(
+                        value = settings.parallelTasks.toFloat(),
+                        onValueChange = {
+                            viewModel.updateSettings { value ->
+                                value.copy(parallelTasks = it.roundToInt().coerceIn(1, 4))
+                            }
                         },
-                    )
-                },
-            )
-            SoftDivider()
-            Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
-                Row {
-                    Text("并行任务数", modifier = Modifier.weight(1f))
-                    Text(
-                        settings.parallelTasks.toString(),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        valueRange = 1f..4f,
+                        steps = 2,
                     )
                 }
-                Slider(
-                    value = settings.parallelTasks.toFloat(),
-                    onValueChange = {
-                        viewModel.updateSettings { value ->
-                            value.copy(parallelTasks = it.roundToInt().coerceIn(1, 4))
-                        }
-                    },
-                    valueRange = 1f..4f,
-                    steps = 2,
-                )
             }
         }
         item { Spacer(Modifier.height(12.dp)); SectionHeader("默认下载内容") }
         item {
-            SettingRow(
-                "下载内容",
-                contentSummary(settings.content),
-                description = "视频、音频、字幕、弹幕、封面等默认开关",
-                modifier = Modifier.clickable { contentDialog = true },
-            )
+            SettingsGroup {
+                SettingRow(
+                    "下载内容",
+                    contentSummary(settings.content),
+                    description = "视频、音频、字幕、弹幕、封面等默认开关",
+                    modifier = Modifier.clickable { contentDialog = true },
+                )
+            }
         }
         item { Spacer(Modifier.height(12.dp)); SectionHeader("弹幕样式与过滤") }
         item {
-            SettingRow(
-                "弹幕字体",
-                settings.danmakuFont,
-                modifier = Modifier.clickable { qualityDialog = "font" },
-            )
-            SoftDivider()
-            SettingRow(
-                "弹幕样式",
-                "${(settings.danmakuOpacity * 100).roundToInt()}% · ${String.format("%.1fx", settings.danmakuSpeed)}",
-                description = "不透明度、滚动速度",
-                modifier = Modifier.clickable { danmakuDialog = true },
-            )
-            SoftDivider()
-            SettingRow(
-                "关键词过滤",
-                keywordSummary(settings.blockedKeywords),
-                description = "每行一个关键词或正则",
-                modifier = Modifier.clickable { keywordDialog = true },
-            )
+            SettingsGroup {
+                SettingRow(
+                    "弹幕字体",
+                    settings.danmakuFont,
+                    modifier = Modifier.clickable { qualityDialog = "font" },
+                )
+                SoftDivider()
+                SettingRow(
+                    "弹幕样式",
+                    "${(settings.danmakuOpacity * 100).roundToInt()}% · ${String.format("%.1fx", settings.danmakuSpeed)}",
+                    description = "不透明度、滚动速度",
+                    modifier = Modifier.clickable { danmakuDialog = true },
+                )
+                SoftDivider()
+                SettingRow(
+                    "关键词过滤",
+                    keywordSummary(settings.blockedKeywords),
+                    description = "每行一个关键词或正则",
+                    modifier = Modifier.clickable { keywordDialog = true },
+                )
+            }
         }
         item {
             Spacer(Modifier.height(12.dp))
             SectionHeader("关于")
-            SettingRow(
-                title = "Bd",
-                value = "1.0.0",
-                description = "原生 Android 下载与离线管理工具",
-                showChevron = false,
-            )
+            SettingsGroup {
+                SettingRow(
+                    title = "Bd",
+                    value = "1.0.0",
+                    description = "原生 Android 下载与离线管理工具",
+                    showChevron = false,
+                )
+            }
         }
     }
 
@@ -1139,6 +1248,20 @@ private fun SettingsScreen(
             onConfirm = { value -> viewModel.updateSettings { it.copy(blockedKeywords = value) } },
             onDismiss = { keywordDialog = false },
         )
+    }
+}
+
+@Composable
+private fun SettingsGroup(content: @Composable ColumnScope.() -> Unit) {
+    Surface(
+        modifier = Modifier
+            .padding(horizontal = 16.dp)
+            .fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(content = content)
     }
 }
 
